@@ -1,6 +1,6 @@
 import json
 import math
-
+import datetime as datetime
 import requests
 from bs4 import BeautifulSoup
 import concurrent.futures
@@ -63,6 +63,25 @@ def scrap_hotel_reviews_from_url(args):
     reviews_tag = bs_res.find_all("div", {"class":"rev_wrap ui_columns is-multiline"})
 
     for review_tag in reviews_tag:
+        review_map = {}
+
+        review_map["thumbnail"] = review_tag.find("img",{"class":"basicImg"})["data-lazyurl"]
+        review_map["review_count"] = int(review_tag.find("span",{"class":"ui_bubble_rating"})["class"][1][-2])
+        review_map["title"] = review_tag.find("span",{"class":"noQuotes"}).text
+        review_map["description"] = review_tag.find("p",{"class":"partial_entry"}).text
+        review_map["date_of_visit"] = review_tag.find("div",{"class":"prw_rup prw_reviews_stay_date_hsx"}).text.split(":")[-1].strip()
+        review_map["review_date"] = review_tag.find("span",{"class":"ratingDate"}).text.split("Reviewed")[-1].strip()
+        try:
+            review_map["photos_list"] = []
+            for img_tag in review_tag.find("div",{"class":"inlinePhotosWrapper"}).find_all("img"):
+                if img_tag.parent.name == 'span':
+                    review_map["photos_list"].append(img_tag.attrs["data-lazyurl"])
+        except:
+            pass
+        review_map["review_url"] = base_url + review_tag.find("a",{"class":"title"})["href"]
+        review_map["timestamp"] = datetime.datetime.utcnow()
+
+        hotel_reviews.append(review_map)
         print(review_tag)
 
     print("BS : ",bs_res)
@@ -81,6 +100,7 @@ def scrap_hotel_reviews(args):
             review_url = url.replace("Reviews-",f"Reviews-or{page*per_page_items}-")
             executor.submit(scrap_hotel_reviews_from_url,[review_url,hotel_reviews])
             page += 1
+            break
     return hotel_reviews
 
 
@@ -112,6 +132,11 @@ def scrap_hotel_details_from_url(args):
 
         restaurant['name'] = restaurants_obj["data"]["name"]
         restaurant['website'] = restaurants_obj["data"]["website"]
+        restaurant['price'] = restaurants_obj["data"]["price"]
+        restaurant['phone'] = restaurants_obj["data"]["phone"]
+        restaurant['email'] = restaurants_obj['data']['email']
+        restaurant['latitude'] = restaurants_obj["data"]["latitude"]
+        restaurant['longitude'] = restaurants_obj["data"]["longitude"]
         restaurant['rating'] = restaurants_obj["data"]["rating"]
         restaurant['num_reviews'] = restaurants_obj["data"]["num_reviews"]
         restaurant['full_address'] = restaurants_obj["data"]["address"]
@@ -133,6 +158,18 @@ def scrap_hotel_details_from_url(args):
             restaurant['special_diets'] += item["tagValue"]+", "
         if restaurant['special_diets']:
             restaurant['special_diets'] = restaurant['special_diets'].strip()[:-1]
+
+        restaurant['meals'] = ""
+        for item in restaurants_overview_obj['data']['detailCard']['tagTexts']['meals']["tags"]:
+            restaurant['meals'] += item["tagValue"]+", "
+        if restaurant['meals']:
+            restaurant['meals'] = restaurant['meals'].strip()[:-1]
+
+        restaurant['features'] = ""
+        for item in restaurants_overview_obj['data']['detailCard']['tagTexts']['features']["tags"]:
+            restaurant['features'] += item["tagValue"]+", "
+        if restaurant['features']:
+            restaurant['features'] = restaurant['features'].strip()[:-1]
 
         restaurant['is_claimed'] = json_data["features"]["restaurants_claimed_badge"]
         restaurant['rating_questions'] = restaurants_overview_obj['data']["rating"]["ratingQuestions"]
@@ -157,7 +194,7 @@ def scrap_geo_hotels_from_url(args):
         for link in get_all_links:
             hotel_url = base_url+link["href"]
             executor.submit(scrap_hotel_details_from_url,[hotel_url,hotels_list])
-            # break
+            break
 
 
 def start_scrap_geo_hotels():
